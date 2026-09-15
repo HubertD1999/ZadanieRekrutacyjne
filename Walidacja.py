@@ -53,3 +53,26 @@ for i in paths:
                 element.Name
             )
         print("\n")
+
+"Sprawdzam poprawność przypisania poziomów"
+
+for i in paths:
+    validator = IFCValidator(ifcopenshell.open(i))
+    wrong, intersecting = validator.check_element_levels()
+
+    print(f"Błędnie przypisane w {i}: {len(wrong)}")
+    print(f"Przecinające level w {i}: {len(intersecting)}")
+
+    for item in intersecting:
+        element = item["element"]
+
+        print(
+            element.id(),
+            element.is_a(),
+            element.GlobalId,
+            "Level:", item["level"],
+            "Element Z:",
+            item["element_min_z"],
+            "-",
+            item["element_max_z"]
+        )
