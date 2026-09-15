@@ -15,7 +15,7 @@ for i in paths:
     ifcopenshell.validate.validate(model, logger)
 
     if len(logger.statements)>0:
-        print(f"Issiues in {i}:\n")
+        print(f"Problemy w {i}:\n")
         for error in logger.statements:
             print(error)
         print("\n")
@@ -26,8 +26,8 @@ for i in paths:
     validator = IFCValidator(ifcopenshell.open(i))
     missing_names = validator.check_missing_attribute("Name")
     if len(missing_names)>0:
-        print(f"Missing names in {i}:\n")
-        for element in missing_names[:5]:
+        print(f"Brakujące nazwy w {i}:\n")
+        for element in missing_names:
             print(
                 element.id(),
                 element.is_a(),
@@ -39,9 +39,9 @@ for i in paths:
 
 for i in paths:
     validator = IFCValidator(ifcopenshell.open(i))
-    duplicates = validator.check_duplicate_attribute("Name")
+    duplicates = validator.check_duplicate_attribute("GlobalId")
 
-    print(f"Liczba duplikatów: {len(duplicates)}\n")
+    print(f"Liczba duplikatów w {i}: {len(duplicates)}\n")
 
     for value, elements in duplicates.items():
         print(f"{value}\n")
@@ -50,7 +50,6 @@ for i in paths:
             print(
                 element.id(),
                 element.is_a(),
-                element.Name,
-                element.GlobalId,
+                element.Name
             )
         print("\n")
