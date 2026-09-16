@@ -2,7 +2,6 @@
 
 from Tools import IFCValidator
 import ifcopenshell.validate
-import pandas as pd
 
 paths = [r"SEGMENT.ifc",r"ANTENA.ifc"]
 
