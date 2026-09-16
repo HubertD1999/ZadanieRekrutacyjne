@@ -2,6 +2,7 @@
 
 from Tools import IFCValidator
 import ifcopenshell.validate
+import pandas as pd
 
 paths = [r"SEGMENT.ifc",r"ANTENA.ifc"]
 
@@ -20,7 +21,7 @@ for i in paths:
             print(error)
         print("\n")
 
-"Sprawdzam brakujące atrybuty, na przykładzie Name"
+"Sprawdzam brakujące atrybuty, na przykładzie Name(5 pierwszych printów)"
 for i in paths:
 
     validator = IFCValidator(ifcopenshell.open(i))
@@ -60,8 +61,8 @@ for i in paths:
     validator = IFCValidator(ifcopenshell.open(i))
     wrong, intersecting = validator.check_element_levels()
 
-    print(f"Błędnie przypisane w {i}: {len(wrong)}")
-    print(f"Przecinające level w {i}: {len(intersecting)}")
+    print(f"Błędnie przypisane w {i}: {len(wrong)}\n")
+    print(f"Przecinające level w {i}: {len(intersecting)}\n")
 
     for item in intersecting:
         element = item["element"]
@@ -74,5 +75,29 @@ for i in paths:
             "Element Z:",
             item["element_min_z"],
             "-",
-            item["element_max_z"]
-        )
+            item["element_max_z"],
+            )
+    print("\n")
+
+"Sprawdzenie property setów"
+
+
+
+for i in paths:
+    psets = {}
+    model = ifcopenshell.open(i)
+    print(f"PSETy w {i}:")
+    for pset in model.by_type("IfcPropertySet"):
+
+        if pset.Name not in psets:
+            psets[pset.Name] = set()
+
+        for prop in pset.HasProperties:
+            psets[pset.Name].add(prop.Name)
+
+    for pset_name, properties in sorted(psets.items()):
+        print(f"\nPSET: {pset_name}")
+
+        for property_name in sorted(properties):
+            print(f"    {property_name}")
+    print("\n")

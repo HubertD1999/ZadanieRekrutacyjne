@@ -43,10 +43,6 @@ class IFCValidator:
         wrong = []
         intersecting = []
 
-        # -------------------------
-        # 1. Pobranie leveli
-        # -------------------------
-
         levels = []
 
         for storey in self.model.by_type("IfcBuildingStorey"):
@@ -64,24 +60,17 @@ class IFCValidator:
                 "z": z*unit_scale,
             })
 
-        # Sortowanie od najniższego do najwyższego
+
         levels.sort(key=lambda x: x["z"])
 
-
-        # -------------------------
-        # 2. Geometria
-        # -------------------------
 
         settings = ifcopenshell.geom.settings()
         settings.set(settings.USE_WORLD_COORDS, True)
 
-        # -------------------------
-        # 3. Elementy
-        # -------------------------
 
         for element in self.model.by_type("IfcElement"):
 
-            # Szukamy levelu przypisanego do elementu
+
             assigned_level = None
 
             for relation in self.model.by_type(
@@ -98,7 +87,7 @@ class IFCValidator:
             if assigned_level is None:
                 continue
 
-            # Szukamy danych tego levelu
+
             level_index = None
 
             for index, level in enumerate(levels):
@@ -111,15 +100,11 @@ class IFCValidator:
 
             level_min_z = levels[level_index]["z"]
 
-            # Górna granica = następny level
+
             if level_index + 1 < len(levels):
                 level_max_z = levels[level_index + 1]["z"]
             else:
                 level_max_z = float("inf")
-
-            # -------------------------
-            # 4. Pobieramy geometrię
-            # -------------------------
 
             try:
                 shape = ifcopenshell.geom.create_shape(
@@ -130,6 +115,13 @@ class IFCValidator:
                 vertices = shape.geometry.verts
 
                 if not vertices:
+                    print(
+                        f"Brak geometrii: "
+                        f"{element.is_a()} | "
+                        f"GlobalId: {element.GlobalId} | "
+                        f"Name: {element.Name}"
+                    )
+                    print("\n")
                     continue
 
                 z_values = vertices[2::3]
@@ -137,14 +129,17 @@ class IFCValidator:
                 element_min_z = min(z_values)
                 element_max_z = max(z_values)
 
-            except Exception:
+            except Exception as e:
+                print(
+                    f"Błąd geometrii: "
+                    f"{element.is_a()} | "
+                    f"GlobalId: {element.GlobalId} | "
+                    f"Name: {element.Name} | "
+                    f"Błąd: {e}"
+                )
+                print("\n")
                 continue
 
-            # -------------------------
-            # 5. Sprawdzamy położenie
-            # -------------------------
-
-            # Całkowicie poza levelem
             if (
                     element_max_z <= level_min_z
                     or element_min_z >= level_max_z
