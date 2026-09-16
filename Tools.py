@@ -174,4 +174,3 @@ class IFCValidator:
 
         return wrong, intersecting
 
-

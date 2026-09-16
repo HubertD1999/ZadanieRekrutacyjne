@@ -60,7 +60,7 @@ for i in paths:
     validator = IFCValidator(ifcopenshell.open(i))
     wrong, intersecting = validator.check_element_levels()
 
-    '''print(f"Błędnie przypisane w {i}: {len(wrong)}")
+    print(f"Błędnie przypisane w {i}: {len(wrong)}")
     print(f"Przecinające level w {i}: {len(intersecting)}")
 
     for item in intersecting:
@@ -75,4 +75,4 @@ for i in paths:
             item["element_min_z"],
             "-",
             item["element_max_z"]
-        )'''
+        )
