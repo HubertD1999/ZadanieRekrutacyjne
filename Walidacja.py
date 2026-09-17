@@ -3,7 +3,8 @@
 from Tools import IFCValidator
 import ifcopenshell.validate
 
-paths = [r"SEGMENT.ifc",r"ANTENA.ifc"]
+#paths = [r"SEGMENT.ifc",r"ANTENA.ifc",]
+paths = [r"wynik/SEGMENT_z_antena.ifc"]
 
 "Sprawdzam poprawność struktury pliku IFC"
 for i in paths:
