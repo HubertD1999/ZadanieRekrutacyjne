@@ -1,384 +1,659 @@
-import ifcopenshell
 import ifcopenshell.geom
-import matplotlib.pyplot as plt
-import math
+import numpy as np
+from shapely.geometry import LineString, Polygon
+from shapely.ops import polygonize, unary_union
+from pathlib import Path
+import shutil
+import ifcopenshell.util.element
+import ifcopenshell.util.unit
 
-
-model = ifcopenshell.open("SEGMENT.ifc")
-
-settings = ifcopenshell.geom.settings()
-settings.set(settings.USE_WORLD_COORDS, True)
-
+IFC_FILE = "SEGMENT.ifc"
 
 TARGET_AZIMUTH = 123.0
 
-# Środek konstrukcji
-CONSTRUCTION_X = 0.0
-CONSTRUCTION_Y = 0.0
+TARGET_Z = 3.0
+
+ANTENA_GUID = "3SEmPjtkzBSxSIeRUptjB2"
+
+WORK_DIR = Path("wynik")
 
 
-def calculate_cylinder_axis(vertices):
-    """
-    Wyznacza oś pochylonego walca na podstawie vertexów.
-
-    Zakładamy, że vertexy występują tylko na dwóch końcach walca:
-    - dolny przekrój
-    - górny przekrój
-
-    Zwraca:
-        bottom_center = (x, y, z)
-        top_center    = (x, y, z)
-    """
-
-    # --------------------------------------------
-    # Zamiana płaskiej tablicy na punkty XYZ
-    # --------------------------------------------
-
-    points = []
-
-    for i in range(0, len(vertices), 3):
-        x = vertices[i]
-        y = vertices[i + 1]
-        z = vertices[i + 2]
-
-        points.append((x, y, z))
-
-
-    # --------------------------------------------
-    # Znajdujemy dwa poziomy Z
-    # --------------------------------------------
-
-    z_values = [p[2] for p in points]
-
-    min_z = min(z_values)
-    max_z = max(z_values)
-
-
-    # --------------------------------------------
-    # Tolerancja
-    # --------------------------------------------
-
-    tolerance = 0.001
-
-
-    bottom_points = [
-        p for p in points
-        if abs(p[2] - min_z) < tolerance
-    ]
-
-    top_points = [
-        p for p in points
-        if abs(p[2] - max_z) < tolerance
-    ]
-
-
-    # --------------------------------------------
-    # Środek przekroju
-    # --------------------------------------------
-
-    def calculate_center(points):
-
-        x = sum(p[0] for p in points) / len(points)
-        y = sum(p[1] for p in points) / len(points)
-        z = sum(p[2] for p in points) / len(points)
-
-        return (x, y, z)
-
-
-    bottom_center = calculate_center(bottom_points)
-    top_center = calculate_center(top_points)
-
-
-    return bottom_center, top_center
-
-
-def point_on_axis_at_z(bottom, top, target_z):
-    """
-    Znajduje punkt na osi walca dla określonego Z.
-    """
-
-    x1, y1, z1 = bottom
-    x2, y2, z2 = top
-
-    # Parametr t:
-    #
-    # P = P_bottom + t * (P_top - P_bottom)
-    #
-    # szukamy takiego t, aby Z = target_z
-
-    if abs(z2 - z1) < 1e-9:
-        raise ValueError("Oś walca jest pozioma — brak przecięcia z zadanym Z.")
-
-    t = (target_z - z1) / (z2 - z1)
-
-    x = x1 + t * (x2 - x1)
-    y = y1 + t * (y2 - y1)
-    z = z1 + t * (z2 - z1)
-
-    return (x, y, z)
-
-
-def calculate_azimuth(point, origin=(0, 0)):
-    """
-    Azymut geodezyjny:
-        0°   = północ
-        90°  = wschód
-        180° = południe
-        270° = zachód
-    """
-
-    x, y, z = point
-
-    origin_x, origin_y = origin
-
-    dx = x - origin_x
-    dy = y - origin_y
-
-    azimuth = math.degrees(
-        math.atan2(dx, dy)
-    ) % 360
-
-    return azimuth
+def azimuth_from_xy(dx, dy):
+    angle = np.degrees(np.arctan2(dx, dy))
+    return angle % 360.0
 
 
 def angular_difference(a, b):
-    """
-    Najmniejsza różnica między dwoma azymutami.
-    """
-
-    return abs((a - b + 180) % 360 - 180)
+    return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
-# ============================================================
-# ANALIZA NÓG
-# ============================================================
+def triangle_plane_intersection(v0, v1, v2, z_plane, eps=1e-9):
 
-columns = []
+    vertices = [v0, v1, v2]
+    points = []
+
+    edges = [
+        (vertices[0], vertices[1]),
+        (vertices[1], vertices[2]),
+        (vertices[2], vertices[0]),
+    ]
+
+    for p1, p2 in edges:
+
+        z1 = p1[2]
+        z2 = p2[2]
+
+        if abs(z1 - z_plane) < eps and abs(z2 - z_plane) < eps:
+
+            points.append(
+                np.array([p1[0], p1[1], z_plane])
+            )
+
+            points.append(
+                np.array([p2[0], p2[1], z_plane])
+            )
+
+            continue
+
+        if abs(z1 - z_plane) < eps:
+
+            points.append(
+                np.array([p1[0], p1[1], z_plane])
+            )
+
+        if abs(z2 - z_plane) < eps:
+
+            points.append(
+                np.array([p2[0], p2[1], z_plane])
+            )
+
+        if (z1 - z_plane) * (z2 - z_plane) < 0:
+
+            t = (z_plane - z1) / (z2 - z1)
+
+            point = p1 + t * (p2 - p1)
+            point[2] = z_plane
+
+            points.append(point)
+
+    unique = []
+
+    for p in points:
+
+        if not any(
+            np.linalg.norm(p - q) < eps
+            for q in unique
+        ):
+            unique.append(p)
+
+    if len(unique) >= 2:
+        return unique[0], unique[1]
+
+    return None
 
 
-for column in model.by_type("IfcColumn"):
+def section_centroid(shape, z_plane):
 
-    shape = ifcopenshell.geom.create_shape(
-        settings,
-        column
-    )
+    verts = np.asarray(
+        shape.geometry.verts,
+        dtype=float
+    ).reshape(-1, 3)
 
-    vertices = shape.geometry.verts
+    faces = np.asarray(
+        shape.geometry.faces,
+        dtype=int
+    ).reshape(-1, 3)
 
+    segments = []
 
-    # --------------------------------------------
-    # OŚ WALCA
-    # --------------------------------------------
+    SNAP = 1e-6
 
-    bottom_center, top_center = calculate_cylinder_axis(
-        vertices
-    )
-
-
-    # --------------------------------------------
-    # Punkt osi na wysokości 3 m
-    # --------------------------------------------
-
-    point_3m = point_on_axis_at_z(
-        bottom_center,
-        top_center,
-        3.0
-    )
-
-
-    # --------------------------------------------
-    # AZYMUT
-    # --------------------------------------------
-
-    azimuth = calculate_azimuth(
-        point_3m,
-        (
-            CONSTRUCTION_X,
-            CONSTRUCTION_Y
+    def snap_xy(x, y):
+        return (
+            round(x / SNAP) * SNAP,
+            round(y / SNAP) * SNAP
         )
+
+    for face in faces:
+
+        v0 = verts[face[0]]
+        v1 = verts[face[1]]
+        v2 = verts[face[2]]
+
+        result = triangle_plane_intersection(
+            v0,
+            v1,
+            v2,
+            z_plane
+        )
+
+        if result is None:
+            continue
+
+        p1, p2 = result
+
+        x1, y1 = snap_xy(
+            p1[0],
+            p1[1]
+        )
+
+        x2, y2 = snap_xy(
+            p2[0],
+            p2[1]
+        )
+
+        if abs(x1 - x2) < SNAP and \
+           abs(y1 - y2) < SNAP:
+            continue
+
+        segments.append(
+            LineString([
+                (x1, y1),
+                (x2, y2)
+            ])
+        )
+
+    print(
+        f"Znaleziono {len(segments)} "
+        f"odcinków przekroju."
     )
 
+    if not segments:
+        return None
+
+    merged = unary_union(segments)
+
+    polygons = list(
+        polygonize(merged)
+    )
+
+    print(
+        f"Utworzono {len(polygons)} "
+        f"poligonów przekroju."
+    )
+
+    if not polygons:
+        return None
+
+    polygons_sorted = sorted(
+        polygons,
+        key=lambda p: p.area,
+        reverse=True
+    )
+
+    outer = polygons_sorted[0]
+
+    holes = []
+
+    for polygon in polygons_sorted[1:]:
+
+        if outer.contains(polygon):
+            holes.append(polygon)
+
+    section = outer
+
+    for hole in holes:
+        section = section.difference(hole)
+
+    centroid = section.centroid
+
+    return (
+        centroid.x,
+        centroid.y,
+        z_plane,
+        section.area
+    )
+
+
+model = ifcopenshell.open(IFC_FILE)
+
+settings = ifcopenshell.geom.settings()
+
+settings.set(
+    settings.USE_WORLD_COORDS,
+    True
+)
+
+columns = model.by_type("IfcColumn")
+
+if not columns:
+    raise RuntimeError(
+        "Nie znaleziono żadnego IfcColumn."
+    )
+
+column_data = []
+
+for column in columns:
+
+    try:
+
+        shape = ifcopenshell.geom.create_shape(
+            settings,
+            column
+        )
+
+    except Exception as e:
+
+        print(
+            f"Nie można utworzyć geometrii "
+            f"dla {column.GlobalId}: {e}"
+        )
+
+        continue
+
+    verts = np.asarray(
+        shape.geometry.verts,
+        dtype=float
+    ).reshape(-1, 3)
+
+    min_xyz = verts.min(axis=0)
+    max_xyz = verts.max(axis=0)
+
+    center = (
+        min_xyz + max_xyz
+    ) / 2.0
+
+    column_data.append({
+        "entity": column,
+        "shape": shape,
+        "center": center,
+        "min": min_xyz,
+        "max": max_xyz,
+    })
+
+
+construction_center = np.mean(
+    [c["center"] for c in column_data],
+    axis=0
+)
+
+print()
+print("=== KONSTRUKCJA ===")
+
+print(
+    f"Środek konstrukcji: "
+    f"X={construction_center[0]:.3f}, "
+    f"Y={construction_center[1]:.3f}, "
+    f"Z={construction_center[2]:.3f}"
+)
+
+
+print()
+print("=== KOLUMNY ===")
+
+for i, data in enumerate(
+    column_data,
+    start=1
+):
+
+    center = data["center"]
+
+    dx = (
+        center[0]
+        - construction_center[0]
+    )
+
+    dy = (
+        center[1]
+        - construction_center[1]
+    )
+
+    azimuth = azimuth_from_xy(
+        dx,
+        dy
+    )
 
     difference = angular_difference(
         azimuth,
         TARGET_AZIMUTH
     )
 
+    data["azimuth"] = azimuth
+    data["azimuth_difference"] = difference
 
-    column_data = {
-        "column": column,
-        "id": column.id(),
-
-        "bottom": bottom_center,
-        "top": top_center,
-
-        "point_3m": point_3m,
-
-        "azimuth": azimuth,
-        "difference": difference
-    }
-
-
-    columns.append(column_data)
-
-
-    # --------------------------------------------
-    # PRINT
-    # --------------------------------------------
-
-    print()
-    print("=" * 70)
-
-    print(f"IfcColumn ID: {column.id()}")
+    column = data["entity"]
 
     print(
-        f"Dół osi:       "
-        f"X={bottom_center[0]:.3f}, "
-        f"Y={bottom_center[1]:.3f}, "
-        f"Z={bottom_center[2]:.3f}"
-    )
-
-    print(
-        f"Góra osi:      "
-        f"X={top_center[0]:.3f}, "
-        f"Y={top_center[1]:.3f}, "
-        f"Z={top_center[2]:.3f}"
-    )
-
-    print(
-        f"Oś @ Z=3m:     "
-        f"X={point_3m[0]:.3f}, "
-        f"Y={point_3m[1]:.3f}, "
-        f"Z={point_3m[2]:.3f}"
-    )
-
-    print(
-        f"Azymut:        "
-        f"{azimuth:.3f}°"
-    )
-
-    print(
-        f"Różnica:       "
-        f"{difference:.3f}°"
+        f"{i:2d}. "
+        f"{column.GlobalId} | "
+        f"{column.Name} | "
+        f"X={center[0]:.3f}, "
+        f"Y={center[1]:.3f} | "
+        f"azymut={azimuth:.2f}° | "
+        f"Δ={difference:.2f}°"
     )
 
 
-# ============================================================
-# WYBÓR NOGI NAJBLIŻSZEJ 123°
-# ============================================================
+selected = min(
+    column_data,
+    key=lambda x: x["azimuth_difference"]
+)
 
-if columns:
+selected_column = selected["entity"]
 
-    closest = min(
-        columns,
-        key=lambda c: c["difference"]
+print()
+print("=== WYBRANA NOGA ===")
+
+print(
+    f"GlobalId: {selected_column.GlobalId}"
+)
+
+print(
+    f"Name: {selected_column.Name}"
+)
+
+print(
+    f"Azymut: {selected['azimuth']:.2f}°"
+)
+
+print(
+    f"Różnica od {TARGET_AZIMUTH}°: "
+    f"{selected['azimuth_difference']:.2f}°"
+)
+
+
+size = (
+    selected["max"]
+    - selected["min"]
+)
+
+print()
+print("=== ROZMIAR GEOMETRII NOGI ===")
+
+print(
+    f"X = {size[0]:.6f}"
+)
+
+print(
+    f"Y = {size[1]:.6f}"
+)
+
+print(
+    f"Z = {size[2]:.6f}"
+)
+
+
+print()
+
+print(
+    f"=== PRZEKRÓJ NOGI NA Z = "
+    f"{TARGET_Z:.3f} ==="
+)
+
+result = section_centroid(
+    selected["shape"],
+    TARGET_Z
+)
+
+if result is None:
+
+    raise RuntimeError(
+        f"Nie udało się znaleźć przekroju "
+        f"na Z={TARGET_Z}."
     )
 
-
-    print()
-    print()
-    print("#" * 70)
-    print("NOGA NAJBLIŻSZA AZYMUTOWI 123°")
-    print("#" * 70)
-
-    print(
-        f"IfcColumn ID:   {closest['id']}"
-    )
-
-    print(
-        f"Azymut:         "
-        f"{closest['azimuth']:.3f}°"
-    )
-
-    print(
-        f"Różnica:        "
-        f"{closest['difference']:.3f}°"
-    )
-
-    print(
-        f"Origin anteny:  "
-        f"X={closest['point_3m'][0]:.3f}, "
-        f"Y={closest['point_3m'][1]:.3f}, "
-        f"Z={closest['point_3m'][2]:.3f}"
-    )
-
-    print("#" * 70)
+x, y, z, area = result
 
 
-# ============================================================
-# WYKRES
-# ============================================================
+print()
+print("=== PUNKT WSTAWIENIA ===")
 
-for c in columns:
+print(
+    f"X = {x:.6f}"
+)
 
-    x, y, z = c["point_3m"]
+print(
+    f"Y = {y:.6f}"
+)
 
-    plt.scatter(
+print(
+    f"Z = {z:.6f}"
+)
+
+print(
+    f"Pole przekroju = {area:.6f} m²"
+)
+
+print()
+print("Punkt do wstawienia anteny:")
+
+print(
+    f"({x:.6f}, {y:.6f}, {z:.6f})"
+)
+
+
+WORK_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+shutil.copy2(
+    "SEGMENT.ifc",
+    WORK_DIR / "SEGMENT_work.ifc"
+)
+
+shutil.copy2(
+    "ANTENA.ifc",
+    WORK_DIR / "ANTENA_work.ifc"
+)
+
+print(
+    "\nSkopiowano pliki do folderu:",
+    WORK_DIR
+)
+
+
+segment_model = ifcopenshell.open(
+    str(WORK_DIR / "SEGMENT_work.ifc")
+)
+
+antenna_model = ifcopenshell.open(
+    str(WORK_DIR / "ANTENA_work.ifc")
+)
+
+
+target = np.array(
+    [
         x,
         y,
-        s=100
+        z
+    ],
+    dtype=float
+)
+
+print(
+    "\nPunkt wstawienia anteny:"
+)
+
+print(
+    f"X = {target[0]:.6f}, "
+    f"Y = {target[1]:.6f}, "
+    f"Z = {target[2]:.6f}"
+)
+
+
+antenna_source = antenna_model.by_guid(
+    ANTENA_GUID
+)
+
+if antenna_source is None:
+
+    raise RuntimeError(
+        f"Nie znaleziono anteny: "
+        f"{ANTENA_GUID}"
     )
 
-    plt.annotate(
-        f"ID: {c['id']}\n"
-        f"Az: {c['azimuth']:.1f}°",
-        (x, y),
-        xytext=(8, 8),
-        textcoords="offset points"
+
+print(
+    "\nZnaleziono antenę:"
+)
+
+print(
+    f"Name: {antenna_source.Name}"
+)
+
+print(
+    f"GlobalId: {antenna_source.GlobalId}"
+)
+
+
+antenna_copy = ifcopenshell.util.element.copy_deep(
+    segment_model,
+    antenna_source
+)
+
+
+unit_scale = (
+    ifcopenshell.util.unit.calculate_unit_scale(
+        segment_model
+    )
+)
+
+target_ifc = (
+    target / unit_scale
+)
+
+print(
+    "\n=== JEDNOSTKI ==="
+)
+
+print(
+    f"unit_scale = {unit_scale}"
+)
+
+print(
+    "Punkt w jednostkach IFC:"
+)
+
+print(
+    f"X = {target_ifc[0]:.3f}"
+)
+
+print(
+    f"Y = {target_ifc[1]:.3f}"
+)
+
+print(
+    f"Z = {target_ifc[2]:.3f}"
+)
+
+
+placement = antenna_copy.ObjectPlacement
+
+if placement is None:
+
+    placement = segment_model.create_entity(
+        "IfcLocalPlacement"
     )
 
-
-# Wybrana noga
-
-x, y, z = closest["point_3m"]
-
-plt.scatter(
-    x,
-    y,
-    s=250,
-    facecolors="none",
-    edgecolors="red",
-    linewidths=2
-)
-
-plt.annotate(
-    f"NAJBLIŻSZA 123°\n"
-    f"ID: {closest['id']}\n"
-    f"Az: {closest['azimuth']:.2f}°",
-    (x, y),
-    xytext=(15, -40),
-    textcoords="offset points"
-)
+    antenna_copy.ObjectPlacement = placement
 
 
-# Środek konstrukcji
+placement.PlacementRelTo = None
 
-plt.scatter(
-    CONSTRUCTION_X,
-    CONSTRUCTION_Y,
-    marker="x",
-    s=100
-)
 
-plt.annotate(
-    "Środek konstrukcji",
-    (
-        CONSTRUCTION_X,
-        CONSTRUCTION_Y
-    ),
-    xytext=(8, -30),
-    textcoords="offset points"
+relative = placement.RelativePlacement
+
+if relative is None:
+
+    relative = segment_model.create_entity(
+        "IfcAxis2Placement3D"
+    )
+
+    placement.RelativePlacement = relative
+
+
+relative.Location = segment_model.create_entity(
+    "IfcCartesianPoint",
+    Coordinates=(
+        float(target_ifc[0]),
+        float(target_ifc[1]),
+        float(target_ifc[2])
+    )
 )
 
 
-plt.xlabel("X")
-plt.ylabel("Y")
-plt.title("Oś nóg — punkt na wysokości Z=3m")
+AZIMUTH_REF = TARGET_AZIMUTH + 90
 
-plt.axhline(0, linewidth=0.8)
-plt.axvline(0, linewidth=0.8)
+azimuth_rad = np.radians(
+    AZIMUTH_REF
+)
 
-plt.grid(True)
-plt.axis("equal")
+relative.Axis = segment_model.create_entity(
+    "IfcDirection",
+    DirectionRatios=(
+        0.0,
+        0.0,
+        1.0
+    )
+)
 
-plt.show()
+direction_x = np.sin(
+    azimuth_rad
+)
+
+direction_y = np.cos(
+    azimuth_rad
+)
+
+relative.RefDirection = segment_model.create_entity(
+    "IfcDirection",
+    DirectionRatios=(
+        float(direction_x),
+        float(direction_y),
+        0.0
+    )
+)
+
+
+print()
+print("=== ORIENTACJA ANTENY ===")
+
+print(
+    f"Obrót wokół osi Z = "
+    f"{TARGET_AZIMUTH:.2f}°"
+)
+
+print(
+    "Oś obrotu = origin anteny"
+)
+
+print(
+    "Kierunek końcowy = "
+    f"azymut {TARGET_AZIMUTH:.2f}°"
+)
+
+print(
+    "RefDirection = "
+    f"({direction_x:.6f}, "
+    f"{direction_y:.6f}, "
+    f"0.000000)"
+)
+
+
+output_file = (
+    WORK_DIR /
+    "SEGMENT_z_antena.ifc"
+)
+
+segment_model.write(
+    str(output_file)
+)
+
+
+print()
+print("=== GOTOWE ===")
+
+print(
+    f"Antena wstawiona w: "
+    f"({x:.6f}, {y:.6f}, {z:.6f})"
+)
+
+print(
+    f"Azymut anteny: "
+    f"{TARGET_AZIMUTH:.2f}°"
+)
+
+print(
+    f"Zapisano: {output_file}"
+)
