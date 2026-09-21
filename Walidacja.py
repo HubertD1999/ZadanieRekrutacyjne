@@ -28,7 +28,7 @@ for i in paths:
     missing_names = validator.check_missing_attribute("Name")
     if len(missing_names)>0:
         print(f"Brakujące nazwy w {i}:\n")
-        for element in missing_names[:5]:
+        for element in missing_names:
             print(
                 element.id(),
                 element.is_a(),
