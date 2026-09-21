@@ -3,8 +3,8 @@
 from Tools import IFCValidator
 import ifcopenshell.validate
 
-#paths = [r"SEGMENT.ifc",r"ANTENA.ifc",]
-paths = [r"wynik/SEGMENT_z_antena.ifc"]
+paths = [r"SEGMENT.ifc",r"ANTENA.ifc",]
+
 
 "Sprawdzam poprawność struktury pliku IFC"
 for i in paths:
@@ -42,7 +42,8 @@ for i in paths:
     validator = IFCValidator(ifcopenshell.open(i))
     duplicates = validator.check_duplicate_attribute("GlobalId")
 
-    print(f"Liczba duplikatów w {i}: {len(duplicates)}\n")
+    if (len(duplicates)>0):
+        print(f"Liczba duplikatów w {i}: {len(duplicates)}\n")
 
     for value, elements in duplicates.items():
         print(f"{value}\n")
@@ -58,11 +59,15 @@ for i in paths:
 "Sprawdzam poprawność przypisania poziomów"
 
 for i in paths:
+
+    print(f"Sprawdzam poprawność przypisania leveli w {i}\n")
     validator = IFCValidator(ifcopenshell.open(i))
     wrong, intersecting = validator.check_element_levels()
 
-    print(f"Błędnie przypisane w {i}: {len(wrong)}\n")
-    print(f"Przecinające level w {i}: {len(intersecting)}\n")
+    if (len(wrong)>0):
+        print(f"Błędnie przypisane w {i}: {len(wrong)}\n")
+    if (len(intersecting) > 0):
+        print(f"Przecinające level w {i}: {len(intersecting)}\n")
 
     for item in intersecting:
         element = item["element"]
@@ -80,8 +85,6 @@ for i in paths:
     print("\n")
 
 "Sprawdzenie property setów"
-
-
 
 for i in paths:
     psets = {}

@@ -546,10 +546,25 @@ print(
 print(
     f"Klasa: {antenna_source.is_a()}"
 )
+# ============================================================
+# 11. JEDNOSTKI
+# ============================================================
 
+unit_scale = (
+    ifcopenshell.util.unit.calculate_unit_scale(
+        segment_model
+    )
+)
+
+print()
+print("=== JEDNOSTKI ===")
+
+print(
+    f"unit_scale = {unit_scale}"
+)
 
 # ============================================================
-# 11. ZNALEZIENIE STOREY W SEGMENT
+# 12. ZNALEZIENIE STOREY W SEGMENT
 # ============================================================
 
 storeys = segment_model.by_type(
@@ -579,24 +594,31 @@ for i, storey in enumerate(
     )
 
 
-# ------------------------------------------------------------
-# Wybieramy pierwszy IfcBuildingStorey.
-#
-# Jeżeli SEGMENT ma kilka kondygnacji, można później
-# zmienić tę linię na wybór konkretnego Storey.
-# ------------------------------------------------------------
 
-target_storey = storeys[0]
+
+target_z = target[2]/unit_scale
+
+target_storey = min(
+    storeys,
+    key=lambda storey: abs(
+        (storey.Elevation or 0.0) - target_z
+    )
+)
 
 print()
 print(
+    f"Punkt wstawienia Z = {target_z:.3f}"
+)
+
+print(
     f"Antena zostanie przypisana do: "
-    f"{target_storey.Name}"
+    f"{target_storey.Name} "
+    f"(Elevation={target_storey.Elevation or 0.0:.3f})"
 )
 
 
 # ============================================================
-# 12. KOPIOWANIE ANTENY
+# 13. KOPIOWANIE ANTENY
 # ============================================================
 
 print()
@@ -624,14 +646,7 @@ print(
 
 
 # ============================================================
-# 13. PRZYPISANIE ANTENY DO BUILDING STOREY
-# ============================================================
-#
-# To jest kluczowa zmiana względem poprzedniej wersji.
-#
-# Antena nie może być tylko obiektem istniejącym w pliku.
-# Musi być podpięta do struktury przestrzennej modelu.
-#
+# 14. PRZYPISANIE ANTENY DO BUILDING STOREY
 # ============================================================
 
 print()
@@ -660,22 +675,6 @@ print(
 )
 
 
-# ============================================================
-# 14. JEDNOSTKI
-# ============================================================
-
-unit_scale = (
-    ifcopenshell.util.unit.calculate_unit_scale(
-        segment_model
-    )
-)
-
-print()
-print("=== JEDNOSTKI ===")
-
-print(
-    f"unit_scale = {unit_scale}"
-)
 
 
 # ============================================================

@@ -137,7 +137,6 @@ class IFCValidator:
                     f"Name: {element.Name} | "
                     f"Błąd: {e}"
                 )
-                print("\n")
                 continue
 
             if (
@@ -166,6 +165,6 @@ class IFCValidator:
                     "element_min_z": element_min_z,
                     "element_max_z": element_max_z
                 })
-
+        print(f"\n")
         return wrong, intersecting
 
