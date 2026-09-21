@@ -25,6 +25,7 @@ Polecenie to zainstaluje wszystkie zależności wymagane do uruchomienia projekt
 * **Tools.py** – plik zawierający klasę `IFCValidator`, wykorzystywaną przez skrypt `Walidacja.py` do przeprowadzania dodatkowych kontroli plików IFC.
 * **Wstawienie.py** – skrypt służący do wstawiania anteny z pliku `ANTENA.ifc` do pliku `SEGMENT.ifc` na określonej wysokości i pod określonym azymutem. Skrypt automatycznie wybiera odpowiednią nogę segmentu, a następnie wyznacza punkt wstawienia poprzez przecięcie geometrii nogi z płaszczyzną na wybranej wysokości i wyznaczenie centroidu powstałego przekroju. Na tej podstawie antena jest umieszczana w odpowiednim miejscu oraz orientowana zgodnie z zadanym azymutem.
 * **Wykres.py** – pomocniczy skrypt służący do wizualizacji przykładowego procesu wstawiania anteny.
+* **Zadanie rekrutacyjne.rfa** – rodzina stworzona na drugie zadanie
 
 ## Weryfikacja poprawności pliku ANTENA.ifc
 
