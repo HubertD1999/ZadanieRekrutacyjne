@@ -1,4 +1,3 @@
-import ifcopenshell
 import ifcopenshell.geom
 import ifcopenshell.api
 import ifcopenshell.util.unit
@@ -723,26 +722,6 @@ matrix[1, 3] = target[1]
 matrix[2, 3] = target[2]
 
 
-print()
-print("=== PLACEMENT ANTENY ===")
-
-print(
-    f"X = {target[0]:.6f}"
-)
-
-print(
-    f"Y = {target[1]:.6f}"
-)
-
-print(
-    f"Z = {target[2]:.6f}"
-)
-
-print(
-    f"Azymut = {TARGET_AZIMUTH:.2f}°"
-)
-
-
 # ============================================================
 # 16. USTAWIENIE PLACEMENTU
 # ============================================================
@@ -758,41 +737,7 @@ ifcopenshell.api.run(
 
 
 # ============================================================
-# 17. KONTROLA REFERENCJI PRZESTRZENNEJ
-# ============================================================
-
-print()
-print("=== KONTROLA REFERENCJI ===")
-
-container = None
-
-for rel in segment_model.by_type(
-    "IfcRelContainedInSpatialStructure"
-):
-
-    if antenna_copy in rel.RelatedElements:
-
-        container = rel.RelatingStructure
-        break
-
-
-if container is None:
-
-    raise RuntimeError(
-        "UWAGA: antena nadal nie jest "
-        "podpięta do struktury przestrzennej!"
-    )
-
-
-print(
-    f"Antena znajduje się w: "
-    f"{container.is_a()} "
-    f"'{container.Name}'"
-)
-
-
-# ============================================================
-# 18. ZAPIS
+# 17. ZAPIS
 # ============================================================
 
 output_file = (
@@ -806,7 +751,7 @@ segment_model.write(
 
 
 # ============================================================
-# 19. GOTOWE
+# 18. GOTOWE
 # ============================================================
 
 print()
@@ -840,14 +785,6 @@ print(
     f"IfcBuildingStorey: {target_storey.Name}"
 )
 
-print()
-print(
-    "Nie zmieniano reprezentacji geometrii anteny."
-)
-
-print(
-    "Nie tworzono nowego IfcTriangulatedFaceSet."
-)
 
 print()
 print(

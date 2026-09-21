@@ -68,6 +68,7 @@ class IFCValidator:
         settings.set(settings.USE_WORLD_COORDS, True)
 
 
+
         for element in self.model.by_type("IfcElement"):
 
 
@@ -113,6 +114,8 @@ class IFCValidator:
                 )
 
                 vertices = shape.geometry.verts
+
+
 
                 if not vertices:
                     print(

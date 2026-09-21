@@ -42,7 +42,7 @@ for i in paths:
     validator = IFCValidator(ifcopenshell.open(i))
     duplicates = validator.check_duplicate_attribute("GlobalId")
 
-    if (len(duplicates)>0):
+    if len(duplicates)>0:
         print(f"Liczba duplikatów w {i}: {len(duplicates)}\n")
 
     for value, elements in duplicates.items():
@@ -64,9 +64,9 @@ for i in paths:
     validator = IFCValidator(ifcopenshell.open(i))
     wrong, intersecting = validator.check_element_levels()
 
-    if (len(wrong)>0):
+    if len(wrong)>0:
         print(f"Błędnie przypisane w {i}: {len(wrong)}\n")
-    if (len(intersecting) > 0):
+    if len(intersecting) > 0:
         print(f"Przecinające level w {i}: {len(intersecting)}\n")
 
     for item in intersecting:
@@ -104,3 +104,5 @@ for i in paths:
         for property_name in sorted(properties):
             print(f"    {property_name}")
     print("\n")
+
+
