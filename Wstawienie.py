@@ -1,22 +1,35 @@
+import ifcopenshell
 import ifcopenshell.geom
-import numpy as np
-from shapely.geometry import LineString
-from shapely.ops import polygonize, unary_union
-from pathlib import Path
-import shutil
-import ifcopenshell.util.element
+import ifcopenshell.api
 import ifcopenshell.util.unit
 
+import numpy as np
+
+from shapely.geometry import LineString
+from shapely.ops import polygonize, unary_union
+
+from pathlib import Path
+import shutil
+
+
+# ============================================================
+# USTAWIENIA
+# ============================================================
+
 IFC_FILE = "SEGMENT.ifc"
+ANTENA_FILE = "ANTENA.ifc"
 
 TARGET_AZIMUTH = 123.0
-
 TARGET_Z = 3.0
 
 ANTENA_GUID = "3SEmPjtkzBSxSIeRUptjB2"
 
 WORK_DIR = Path("wynik")
 
+
+# ============================================================
+# FUNKCJE
+# ============================================================
 
 def azimuth_from_xy(dx, dy):
     angle = np.degrees(np.arctan2(dx, dy))
@@ -27,7 +40,13 @@ def angular_difference(a, b):
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
-def triangle_plane_intersection(v0, v1, v2, z_plane, eps=1e-9):
+def triangle_plane_intersection(
+    v0,
+    v1,
+    v2,
+    z_plane,
+    eps=1e-9
+):
     vertices = [v0, v1, v2]
     points = []
 
@@ -38,37 +57,64 @@ def triangle_plane_intersection(v0, v1, v2, z_plane, eps=1e-9):
     ]
 
     for p1, p2 in edges:
+
         z1 = p1[2]
         z2 = p2[2]
 
-        if abs(z1 - z_plane) < eps and abs(z2 - z_plane) < eps:
+        if abs(z1 - z_plane) < eps and \
+           abs(z2 - z_plane) < eps:
+
             points.append(
-                np.array([p1[0], p1[1], z_plane])
+                np.array([
+                    p1[0],
+                    p1[1],
+                    z_plane
+                ])
             )
+
             points.append(
-                np.array([p2[0], p2[1], z_plane])
+                np.array([
+                    p2[0],
+                    p2[1],
+                    z_plane
+                ])
             )
+
             continue
 
         if abs(z1 - z_plane) < eps:
+
             points.append(
-                np.array([p1[0], p1[1], z_plane])
+                np.array([
+                    p1[0],
+                    p1[1],
+                    z_plane
+                ])
             )
 
         if abs(z2 - z_plane) < eps:
+
             points.append(
-                np.array([p2[0], p2[1], z_plane])
+                np.array([
+                    p2[0],
+                    p2[1],
+                    z_plane
+                ])
             )
 
         if (z1 - z_plane) * (z2 - z_plane) < 0:
+
             t = (z_plane - z1) / (z2 - z1)
+
             point = p1 + t * (p2 - p1)
             point[2] = z_plane
+
             points.append(point)
 
     unique = []
 
     for p in points:
+
         if not any(
             np.linalg.norm(p - q) < eps
             for q in unique
@@ -82,6 +128,7 @@ def triangle_plane_intersection(v0, v1, v2, z_plane, eps=1e-9):
 
 
 def section_centroid(shape, z_plane):
+
     verts = np.asarray(
         shape.geometry.verts,
         dtype=float
@@ -103,6 +150,7 @@ def section_centroid(shape, z_plane):
         )
 
     for face in faces:
+
         v0 = verts[face[0]]
         v1 = verts[face[1]]
         v2 = verts[face[2]]
@@ -173,6 +221,7 @@ def section_centroid(shape, z_plane):
     holes = []
 
     for polygon in polygons_sorted[1:]:
+
         if outer.contains(polygon):
             holes.append(polygon)
 
@@ -191,142 +240,9 @@ def section_centroid(shape, z_plane):
     )
 
 
-def find_body_context(model):
-    contexts = model.by_type(
-        "IfcGeometricRepresentationContext"
-    )
-
-    for context in contexts:
-        if getattr(context, "ContextIdentifier", None) == "Body":
-            return context
-
-    for context in contexts:
-        if getattr(context, "ContextType", None) == "Model":
-            return context
-
-    if contexts:
-        return contexts[0]
-
-    raise RuntimeError(
-        "Nie znaleziono IfcGeometricRepresentationContext."
-    )
-
-
-def create_tessellated_representation(
-    model,
-    antenna,
-    shape,
-    unit_scale
-):
-    verts = np.asarray(
-        shape.geometry.verts,
-        dtype=float
-    ).reshape(-1, 3)
-
-    faces = np.asarray(
-        shape.geometry.faces,
-        dtype=int
-    ).reshape(-1, 3)
-
-    if len(verts) == 0:
-        raise RuntimeError(
-            "Geometria anteny nie zawiera wierzchołków."
-        )
-
-    if len(faces) == 0:
-        raise RuntimeError(
-            "Geometria anteny nie zawiera trójkątów."
-        )
-
-    coords = tuple(
-        tuple(
-            float(value / unit_scale)
-            for value in vertex
-        )
-        for vertex in verts
-    )
-
-    coord_index = tuple(
-        tuple(
-            int(index + 1)
-            for index in face
-        )
-        for face in faces
-    )
-
-    point_list = model.create_entity(
-        "IfcCartesianPointList3D",
-        CoordList=coords
-    )
-
-    face_set = model.create_entity(
-        "IfcTriangulatedFaceSet",
-        Coordinates=point_list,
-        CoordIndex=coord_index
-    )
-
-    context = find_body_context(model)
-
-    representation = model.create_entity(
-        "IfcShapeRepresentation",
-        ContextOfItems=context,
-        RepresentationIdentifier="Body",
-        RepresentationType="Tessellation",
-        Items=(face_set,)
-    )
-
-    antenna.Representation = model.create_entity(
-        "IfcProductDefinitionShape",
-        Representations=(representation,)
-    )
-
-    placement = antenna.ObjectPlacement
-
-    if placement is None:
-        placement = model.create_entity(
-            "IfcLocalPlacement"
-        )
-        antenna.ObjectPlacement = placement
-
-    placement.PlacementRelTo = None
-
-    relative = placement.RelativePlacement
-
-    if relative is None:
-        relative = model.create_entity(
-            "IfcAxis2Placement3D"
-        )
-        placement.RelativePlacement = relative
-
-    relative.Location = model.create_entity(
-        "IfcCartesianPoint",
-        Coordinates=(
-            0.0,
-            0.0,
-            0.0
-        )
-    )
-
-    relative.Axis = model.create_entity(
-        "IfcDirection",
-        DirectionRatios=(
-            0.0,
-            0.0,
-            1.0
-        )
-    )
-
-    relative.RefDirection = model.create_entity(
-        "IfcDirection",
-        DirectionRatios=(
-            1.0,
-            0.0,
-            0.0
-        )
-    )
-
-    return face_set, representation
-
+# ============================================================
+# 1. OTWARCIE SEGMENTU
+# ============================================================
 
 model = ifcopenshell.open(IFC_FILE)
 
@@ -337,6 +253,11 @@ settings.set(
     True
 )
 
+
+# ============================================================
+# 2. ZNALEZIENIE KOLUMN
+# ============================================================
+
 columns = model.by_type("IfcColumn")
 
 if not columns:
@@ -344,19 +265,25 @@ if not columns:
         "Nie znaleziono żadnego IfcColumn."
     )
 
+
 column_data = []
 
 for column in columns:
+
     try:
+
         shape = ifcopenshell.geom.create_shape(
             settings,
             column
         )
+
     except Exception as e:
+
         print(
             f"Nie można utworzyć geometrii "
             f"dla {column.GlobalId}: {e}"
         )
+
         continue
 
     verts = np.asarray(
@@ -380,6 +307,16 @@ for column in columns:
     })
 
 
+if not column_data:
+    raise RuntimeError(
+        "Nie udało się odczytać geometrii kolumn."
+    )
+
+
+# ============================================================
+# 3. ŚRODEK KONSTRUKCJI
+# ============================================================
+
 construction_center = np.mean(
     [c["center"] for c in column_data],
     axis=0
@@ -395,6 +332,11 @@ print(
     f"Z={construction_center[2]:.3f}"
 )
 
+
+# ============================================================
+# 4. AZYMUTY KOLUMN
+# ============================================================
+
 print()
 print("=== KOLUMNY ===")
 
@@ -402,6 +344,7 @@ for i, data in enumerate(
     column_data,
     start=1
 ):
+
     center = data["center"]
 
     dx = (
@@ -440,6 +383,10 @@ for i, data in enumerate(
     )
 
 
+# ============================================================
+# 5. WYBÓR NOGI
+# ============================================================
+
 selected = min(
     column_data,
     key=lambda x: x["azimuth_difference"]
@@ -467,25 +414,10 @@ print(
     f"{selected['azimuth_difference']:.2f}°"
 )
 
-size = (
-    selected["max"]
-    - selected["min"]
-)
 
-print()
-print("=== ROZMIAR GEOMETRII NOGI ===")
-
-print(
-    f"X = {size[0]:.6f}"
-)
-
-print(
-    f"Y = {size[1]:.6f}"
-)
-
-print(
-    f"Z = {size[2]:.6f}"
-)
+# ============================================================
+# 6. PRZEKRÓJ
+# ============================================================
 
 print()
 
@@ -507,6 +439,20 @@ if result is None:
 
 x, y, z, area = result
 
+
+# ============================================================
+# 7. PUNKT WSTAWIENIA
+# ============================================================
+
+target = np.array(
+    [
+        x,
+        y,
+        z
+    ],
+    dtype=float
+)
+
 print()
 print("=== PUNKT WSTAWIENIA ===")
 
@@ -526,66 +472,68 @@ print(
     f"Pole przekroju = {area:.6f} m²"
 )
 
+
+# ============================================================
+# 8. KOPIE PLIKÓW
+# ============================================================
+
 WORK_DIR.mkdir(
     parents=True,
     exist_ok=True
 )
 
-shutil.copy2(
-    "SEGMENT.ifc",
-    WORK_DIR / "SEGMENT_work.ifc"
+segment_work = (
+    WORK_DIR /
+    "SEGMENT_work.ifc"
+)
+
+antenna_work = (
+    WORK_DIR /
+    "ANTENA_work.ifc"
 )
 
 shutil.copy2(
-    "ANTENA.ifc",
-    WORK_DIR / "ANTENA_work.ifc"
+    IFC_FILE,
+    segment_work
 )
 
-print(
-    "\nSkopiowano pliki do folderu:",
-    WORK_DIR
+shutil.copy2(
+    ANTENA_FILE,
+    antenna_work
 )
+
+
+# ============================================================
+# 9. OTWARCIE MODELI
+# ============================================================
 
 segment_model = ifcopenshell.open(
-    str(WORK_DIR / "SEGMENT_work.ifc")
+    str(segment_work)
 )
 
 antenna_model = ifcopenshell.open(
-    str(WORK_DIR / "ANTENA_work.ifc")
+    str(antenna_work)
 )
 
-target = np.array(
-    [
-        x,
-        y,
-        z
-    ],
-    dtype=float
-)
 
-print(
-    "\nPunkt wstawienia anteny:"
-)
-
-print(
-    f"X = {target[0]:.6f}, "
-    f"Y = {target[1]:.6f}, "
-    f"Z = {target[2]:.6f}"
-)
+# ============================================================
+# 10. ZNALEZIENIE ANTENY
+# ============================================================
 
 antenna_source = antenna_model.by_guid(
     ANTENA_GUID
 )
 
 if antenna_source is None:
+
     raise RuntimeError(
-        f"Nie znaleziono anteny: "
-        f"{ANTENA_GUID}"
+        f"Nie znaleziono anteny "
+        f"{ANTENA_GUID}."
     )
 
-print(
-    "\nZnaleziono antenę:"
-)
+
+print()
+print("=== ANTENA ŹRÓDŁOWA ===")
 
 print(
     f"Name: {antenna_source.Name}"
@@ -595,19 +543,131 @@ print(
     f"GlobalId: {antenna_source.GlobalId}"
 )
 
-antenna_copy = ifcopenshell.util.element.copy_deep(
-    segment_model,
-    antenna_source
+print(
+    f"Klasa: {antenna_source.is_a()}"
 )
+
+
+# ============================================================
+# 11. ZNALEZIENIE STOREY W SEGMENT
+# ============================================================
+
+storeys = segment_model.by_type(
+    "IfcBuildingStorey"
+)
+
+if not storeys:
+
+    raise RuntimeError(
+        "W SEGMENT.ifc nie znaleziono "
+        "żadnego IfcBuildingStorey."
+    )
+
+
+print()
+print("=== STOREY W SEGMENT ===")
+
+for i, storey in enumerate(
+    storeys,
+    start=1
+):
+
+    print(
+        f"{i}. "
+        f"{storey.GlobalId} | "
+        f"{storey.Name}"
+    )
+
+
+# ------------------------------------------------------------
+# Wybieramy pierwszy IfcBuildingStorey.
+#
+# Jeżeli SEGMENT ma kilka kondygnacji, można później
+# zmienić tę linię na wybór konkretnego Storey.
+# ------------------------------------------------------------
+
+target_storey = storeys[0]
+
+print()
+print(
+    f"Antena zostanie przypisana do: "
+    f"{target_storey.Name}"
+)
+
+
+# ============================================================
+# 12. KOPIOWANIE ANTENY
+# ============================================================
+
+print()
+print("=== KOPIOWANIE ANTENY ===")
+
+antenna_copy = ifcopenshell.api.run(
+    "project.append_asset",
+    segment_model,
+    library=antenna_model,
+    element=antenna_source,
+    assume_asset_uniqueness_by_name=False
+)
+
+if antenna_copy is None:
+
+    raise RuntimeError(
+        "Nie udało się skopiować anteny."
+    )
+
+
+print(
+    f"Utworzono: "
+    f"{antenna_copy.GlobalId}"
+)
+
+
+# ============================================================
+# 13. PRZYPISANIE ANTENY DO BUILDING STOREY
+# ============================================================
+#
+# To jest kluczowa zmiana względem poprzedniej wersji.
+#
+# Antena nie może być tylko obiektem istniejącym w pliku.
+# Musi być podpięta do struktury przestrzennej modelu.
+#
+# ============================================================
+
+print()
+print("=== PRZYPISYWANIE ANTENY DO STOREY ===")
+
+try:
+
+    ifcopenshell.api.run(
+        "spatial.assign_container",
+        segment_model,
+        products=[antenna_copy],
+        relating_structure=target_storey
+    )
+
+except Exception as e:
+
+    raise RuntimeError(
+        "Nie udało się przypisać anteny "
+        f"do IfcBuildingStorey: {e}"
+    )
+
+
+print(
+    f"Antena przypisana do: "
+    f"{target_storey.Name}"
+)
+
+
+# ============================================================
+# 14. JEDNOSTKI
+# ============================================================
 
 unit_scale = (
     ifcopenshell.util.unit.calculate_unit_scale(
         segment_model
     )
-)
-
-target_ifc = (
-    target / unit_scale
 )
 
 print()
@@ -617,62 +677,15 @@ print(
     f"unit_scale = {unit_scale}"
 )
 
-print(
-    "Punkt w jednostkach IFC:"
-)
 
-print(
-    f"X = {target_ifc[0]:.3f}"
-)
+# ============================================================
+# 15. MACIERZ POŁOŻENIA
+# ============================================================
 
-print(
-    f"Y = {target_ifc[1]:.3f}"
-)
-
-print(
-    f"Z = {target_ifc[2]:.3f}"
-)
-
-placement = antenna_copy.ObjectPlacement
-
-if placement is None:
-    placement = segment_model.create_entity(
-        "IfcLocalPlacement"
-    )
-    antenna_copy.ObjectPlacement = placement
-
-placement.PlacementRelTo = None
-
-relative = placement.RelativePlacement
-
-if relative is None:
-    relative = segment_model.create_entity(
-        "IfcAxis2Placement3D"
-    )
-    placement.RelativePlacement = relative
-
-relative.Location = segment_model.create_entity(
-    "IfcCartesianPoint",
-    Coordinates=(
-        float(target_ifc[0]),
-        float(target_ifc[1]),
-        float(target_ifc[2])
-    )
-)
-
-AZIMUTH_REF = TARGET_AZIMUTH + 90
+AZIMUTH_REF = TARGET_AZIMUTH + 90.0
 
 azimuth_rad = np.radians(
     AZIMUTH_REF
-)
-
-relative.Axis = segment_model.create_entity(
-    "IfcDirection",
-    DirectionRatios=(
-        0.0,
-        0.0,
-        1.0
-    )
 )
 
 direction_x = np.sin(
@@ -683,131 +696,105 @@ direction_y = np.cos(
     azimuth_rad
 )
 
-relative.RefDirection = segment_model.create_entity(
-    "IfcDirection",
-    DirectionRatios=(
-        float(direction_x),
-        float(direction_y),
-        0.0
-    )
-)
 
-antenna_shape = ifcopenshell.geom.create_shape(
-    settings,
-    antenna_copy
-)
+matrix = np.eye(4)
 
-antenna_verts = np.asarray(
-    antenna_shape.geometry.verts,
-    dtype=float
-).reshape(-1, 3)
 
-antenna_faces = np.asarray(
-    antenna_shape.geometry.faces,
-    dtype=int
-).reshape(-1, 3)
+# Oś X anteny
+matrix[0, 0] = direction_x
+matrix[1, 0] = direction_y
+matrix[2, 0] = 0.0
 
-if len(antenna_verts) == 0:
-    raise RuntimeError(
-        "Nie udało się odczytać geometrii anteny."
-    )
 
-if len(antenna_faces) == 0:
-    raise RuntimeError(
-        "Nie udało się odczytać trójkątów anteny."
-    )
+# Oś Y anteny
+matrix[0, 1] = -direction_y
+matrix[1, 1] = direction_x
+matrix[2, 1] = 0.0
 
-antenna_min = antenna_verts.min(axis=0)
-antenna_max = antenna_verts.max(axis=0)
+
+# Oś Z
+matrix[0, 2] = 0.0
+matrix[1, 2] = 0.0
+matrix[2, 2] = 1.0
+
+
+# Punkt wstawienia
+matrix[0, 3] = target[0]
+matrix[1, 3] = target[1]
+matrix[2, 3] = target[2]
+
 
 print()
-print("=== GEOMETRIA ANTENY ===")
+print("=== PLACEMENT ANTENY ===")
 
 print(
-    f"Min XYZ = "
-    f"({antenna_min[0]:.6f}, "
-    f"{antenna_min[1]:.6f}, "
-    f"{antenna_min[2]:.6f})"
+    f"X = {target[0]:.6f}"
 )
 
 print(
-    f"Max XYZ = "
-    f"({antenna_max[0]:.6f}, "
-    f"{antenna_max[1]:.6f}, "
-    f"{antenna_max[2]:.6f})"
+    f"Y = {target[1]:.6f}"
 )
 
 print(
-    f"Liczba wierzchołków = "
-    f"{len(antenna_verts)}"
+    f"Z = {target[2]:.6f}"
 )
 
 print(
-    f"Liczba trójkątów = "
-    f"{len(antenna_faces)}"
+    f"Azymut = {TARGET_AZIMUTH:.2f}°"
 )
 
-face_set, representation = create_tessellated_representation(
+
+# ============================================================
+# 16. USTAWIENIE PLACEMENTU
+# ============================================================
+
+ifcopenshell.api.run(
+    "geometry.edit_object_placement",
     segment_model,
-    antenna_copy,
-    antenna_shape,
-    unit_scale
+    product=antenna_copy,
+    matrix=matrix,
+    is_si=True,
+    should_transform_children=True
 )
+
+
+# ============================================================
+# 17. KONTROLA REFERENCJI PRZESTRZENNEJ
+# ============================================================
 
 print()
-print("=== NOWA REPREZENTACJA ANTENY ===")
+print("=== KONTROLA REFERENCJI ===")
 
-print(
-    f"Typ reprezentacji: "
-    f"{representation.RepresentationType}"
-)
+container = None
 
-print(
-    f"Typ geometrii: "
-    f"{face_set.is_a()}"
-)
+for rel in segment_model.by_type(
+    "IfcRelContainedInSpatialStructure"
+):
 
-print(
-    f"Wierzchołki: "
-    f"{len(antenna_verts)}"
-)
+    if antenna_copy in rel.RelatedElements:
 
-print(
-    f"Trójkąty: "
-    f"{len(antenna_faces)}"
-)
+        container = rel.RelatingStructure
+        break
 
-existing_apps = {}
 
-for app in segment_model.by_type("IfcApplication"):
-    key = (
-        app.ApplicationFullName,
-        app.Version,
-        app.ApplicationIdentifier
+if container is None:
+
+    raise RuntimeError(
+        "UWAGA: antena nadal nie jest "
+        "podpięta do struktury przestrzennej!"
     )
 
-    if key not in existing_apps:
-        existing_apps[key] = app
-    else:
-        duplicate_app = app
 
-        for owner_history in segment_model.by_type(
-            "IfcOwnerHistory"
-        ):
-            if owner_history.OwningApplication == duplicate_app:
-                owner_history.OwningApplication = (
-                    existing_apps[key]
-                )
+print(
+    f"Antena znajduje się w: "
+    f"{container.is_a()} "
+    f"'{container.Name}'"
+)
 
-        segment_model.remove(
-            duplicate_app
-        )
 
-for rel in list(
-    segment_model.by_type("IfcRelAssociatesMaterial")
-):
-    if not rel.RelatedObjects:
-        segment_model.remove(rel)
+# ============================================================
+# 18. ZAPIS
+# ============================================================
 
 output_file = (
     WORK_DIR /
@@ -818,25 +805,52 @@ segment_model.write(
     str(output_file)
 )
 
+
+# ============================================================
+# 19. GOTOWE
+# ============================================================
+
 print()
-print("=== GOTOWE ===")
+print("========================================")
+print("                 GOTOWE")
+print("========================================")
 
 print(
-    f"Antena wstawiona w: "
-    f"({x:.6f}, {y:.6f}, {z:.6f})"
+    f"Punkt anteny:"
 )
 
 print(
-    f"Azymut anteny: "
-    f"{TARGET_AZIMUTH:.2f}°"
+    f"X = {x:.6f}"
 )
 
 print(
-    "Reprezentacja anteny: "
-    "IfcTriangulatedFaceSet"
+    f"Y = {y:.6f}"
 )
 
+print(
+    f"Z = {z:.6f}"
+)
+
+print(
+    f"Azymut = {TARGET_AZIMUTH:.2f}°"
+)
+
+print()
+print(
+    "Antena została przypisana do "
+    f"IfcBuildingStorey: {target_storey.Name}"
+)
+
+print()
+print(
+    "Nie zmieniano reprezentacji geometrii anteny."
+)
+
+print(
+    "Nie tworzono nowego IfcTriangulatedFaceSet."
+)
+
+print()
 print(
     f"Zapisano: {output_file}"
 )
-
