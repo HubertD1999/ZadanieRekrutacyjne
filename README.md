@@ -1,5 +1,7 @@
 # Instrukcja uruchomienia kodu
 
+Skrypt działa w Python 3.12.3 i wyższych.
+
 W konsoli należy wykonać polecenie:
 
 ```bash
